@@ -158,4 +158,5 @@ tensorboard --logdir yolov5/runs/train
 
 如有问题，请通过以下方式联系：
 - Email: [Cao_mouiller@163.com]
-- GitHub: [您的 GitHub 主页]
+- GitHub: [https://github.com/Orlando-Lin]
+- gitee: [https://gitee.com/orlando_lin]
