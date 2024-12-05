@@ -2,6 +2,8 @@
 
 这是一个基于 YOLOv5 的乒乓球检测系统，支持数据采集、标注和模型训练。特别优化了在 Apple Silicon (M1/M2) Mac 上的训练性能。
 
+python的数据标注工具prepare_dataset.py文件。
+
 ## 功能特点
 
 1. 数据采集
