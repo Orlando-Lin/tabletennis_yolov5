@@ -94,9 +94,24 @@ class PingPongDetector:
             print("   pip install -r yolov5/requirements.txt")
             raise
         
+        # 初始化串口
+        try:
+            import serial
+            self.serial_port = serial.Serial(
+                port='/dev/ttyAMA0',  # 树莓派的串口设备
+                baudrate=115200,      # 提高波特率
+                timeout=1,
+                write_timeout=1
+            )
+            print("串口初始化成功")
+        except Exception as e:
+            print(f"串口初始化失败: {e}")
+            self.serial_port = None
+        
         # 初始化GPIO
         GPIO.setmode(GPIO.BCM)
-        GPIO.setup(14, GPIO.OUT)
+        GPIO.setup(14, GPIO.OUT)  # TXD
+        GPIO.setup(15, GPIO.IN)   # RXD
         print("GPIO初始化完成")
     
     def get_ball_position(self, frame_width, center_x):
@@ -119,23 +134,22 @@ class PingPongDetector:
     
     def send_position_signal(self, position):
         """
-        通过GPIO发送位置信号
+        通过串口发送位置信号
         :param position: 位置标识 ('L', 'M', 'R')
         """
         try:
-            # 发送位置信号
-            GPIO.output(14, GPIO.HIGH)
-            
-            # 在树莓派上使用实际的串口
             if isinstance(GPIO, MockGPIO):
                 print(f"模拟发送位置信号: {position}")
-            else:
-                import serial
-                ser = serial.Serial('/dev/ttyAMA0', 9600)
-                ser.write(position.encode())
-                ser.close()
+                return
             
-            GPIO.output(14, GPIO.LOW)
+            if self.serial_port and self.serial_port.is_open:
+                # 发送位置信号
+                signal = f"{position}\n".encode()  # 添加换行符并编码
+                self.serial_port.write(signal)
+                self.serial_port.flush()  # 确保数据发送完成
+                print(f"发送位置信号: {position}")
+            else:
+                print("串口未打开")
             
         except Exception as e:
             print(f"发送位置信号时出错: {e}")
@@ -227,7 +241,7 @@ class PingPongDetector:
                             dy = abs(det['y_center'] - final_det['y_center'])
                             dist = (dx*dx + dy*dy) ** 0.5
                             
-                            # 如果中心点距离小于平均半径，认为是重叠
+                            # 如果中心点距离小于平均半���，认为是重叠
                             avg_radius = (det['width'] + det['height'] + 
                                         final_det['width'] + final_det['height']) / 8
                             if dist < avg_radius:
@@ -317,9 +331,12 @@ class PingPongDetector:
     
     def __del__(self):
         """
-        清理GPIO资源
+        清理资源
         """
         try:
+            if hasattr(self, 'serial_port') and self.serial_port:
+                self.serial_port.close()
+                print("串口已关闭")
             GPIO.cleanup()
             print("GPIO资源已清理")
         except:
@@ -360,22 +377,45 @@ def main():
         if not ret:
             raise Exception("无法从摄像头读取图像")
         
+        # 优化相机设置
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)  # 设置帧率
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 减少缓冲
+        
         print("摄像头已就绪")
+        print(f"分辨率: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+        print(f"帧率: {int(cap.get(cv2.CAP_PROP_FPS))}")
         print("按'q'退出程序")
         
+        # 用于计算FPS
+        fps_start_time = time.time()
+        fps_frame_count = 0
+        fps = 0
+        
         while True:
+            # 计算FPS
+            fps_frame_count += 1
+            if fps_frame_count >= 30:  # 每30帧更新一次FPS
+                fps = fps_frame_count / (time.time() - fps_start_time)
+                fps_start_time = time.time()
+                fps_frame_count = 0
+            
             ret, frame = cap.read()
             if not ret:
                 print("读取摄像头画面失败，尝试重新连接...")
-                time.sleep(0.5)
+                time.sleep(0.1)  # 减少等待时间
                 continue
             
             try:
-                # 调整图像大小以提高性能
-                frame = cv2.resize(frame, (640, 480))
-                
                 # 进行检测
                 result_frame, detections = detector.detect(frame)
+                
+                # 显示FPS
+                cv2.putText(result_frame, f"FPS: {fps:.1f}",
+                           (10, 70),
+                           cv2.FONT_HERSHEY_SIMPLEX,
+                           0.5, (0, 255, 0), 1)
                 
                 # 显示结果
                 cv2.imshow('PingPong Detection', result_frame)
@@ -393,7 +433,7 @@ def main():
         try:
             cap.release()
             cv2.destroyAllWindows()
-            GPIO.cleanup()  # 确保GPIO资源被清理
+            GPIO.cleanup()
         except:
             pass
         print("程序结束")
