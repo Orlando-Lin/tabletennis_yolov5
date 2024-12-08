@@ -15,17 +15,57 @@ class PingPongDetector:
         
         # 加载模型
         try:
-            self.model = torch.hub.load('ultralytics/yolov5', 'custom', 
-                                      path=weights_path, force_reload=True,
-                                      trust_repo=True)
+            # 设置超时时间
+            import socket
+            socket.setdefaulttimeout(30)  # 30秒超时
+            
+            # 尝试离线加载
+            if os.path.exists('yolov5'):
+                print("使用本地 YOLOv5 模型...")
+                sys.path.append('yolov5')
+                from models.experimental import attempt_load
+                self.model = attempt_load(weights_path)
+            else:
+                # 在线加载（带重试机制）
+                max_retries = 3
+                for retry in range(max_retries):
+                    try:
+                        print(f"尝试加载模型 (尝试 {retry + 1}/{max_retries})...")
+                        self.model = torch.hub.load('ultralytics/yolov5', 'custom', 
+                                                  path=weights_path, force_reload=True,
+                                                  trust_repo=True)
+                        break
+                    except Exception as e:
+                        if retry == max_retries - 1:
+                            raise
+                        print(f"加载失败，等待重试... ({e})")
+                        time.sleep(5)  # 等待5秒后重试
+            
             # 调整检测参数
             self.model.conf = 0.3  # 降低置信度阈值，提高检测灵敏度
             self.model.iou = 0.4   # 调整IOU阈值
             self.model.classes = [0]  # 只检测乒乓球类别
             self.model.max_det = 10   # 最多检测10个目标
             print("模型加载成功！")
+            
+            # 移动模型到合适的设备
+            if torch.backends.mps.is_available():
+                self.model.to('mps')
+                print("使用 MPS 加速")
+            elif torch.cuda.is_available():
+                self.model.to('cuda')
+                print("使用 CUDA 加速")
+            else:
+                self.model.to('cpu')
+                print("使用 CPU 运行")
+                
         except Exception as e:
             print(f"模型加载失败: {e}")
+            print("\n请尝试以下解决方案：")
+            print("1. 检查网络连接")
+            print("2. 确保已经完成模型训练")
+            print("3. 检查权重文件路径是否正确")
+            print("4. 尝试使用本地 YOLOv5 模型")
             raise
     
     def detect(self, frame):
