@@ -16,7 +16,8 @@ class PingPongDetector:
         # 加载模型
         try:
             self.model = torch.hub.load('ultralytics/yolov5', 'custom', 
-                                      path=weights_path, force_reload=True)
+                                      path=weights_path, force_reload=True,
+                                      trust_repo=True)
             # 调整检测参数
             self.model.conf = 0.3  # 降低置信度阈值，提高检测灵敏度
             self.model.iou = 0.4   # 调整IOU阈值
