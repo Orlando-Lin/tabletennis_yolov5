@@ -30,7 +30,7 @@ class PingPongDetector:
             # 使用本地模型
             print("使用本地 YOLOv5 模型...")
             sys.path.append('yolov5')
-            from models.experimental import attempt_load
+            from yolov5.models.experimental import attempt_load
             self.model = attempt_load(weights_path)
             
             # 调整检测参数
