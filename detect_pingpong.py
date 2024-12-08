@@ -9,6 +9,7 @@ import time
 class MockGPIO:
     BCM = 'BCM'
     OUT = 'OUT'
+    IN = 'IN'    # 添加 IN 属性
     HIGH = 1
     LOW = 0
     
@@ -23,6 +24,11 @@ class MockGPIO:
     @staticmethod
     def output(pin, value):
         print(f"模拟 GPIO: 输出引脚 {pin} 值为 {value}")
+    
+    @staticmethod
+    def input(pin):
+        print(f"模拟 GPIO: 读取引脚 {pin}")
+        return 0  # 模拟返回低电平
     
     @staticmethod
     def cleanup():
@@ -89,21 +95,25 @@ class PingPongDetector:
             print("1. 检查网络连接")
             print("2. 确保已经完成模型训练")
             print("3. 检查权重文件路径是否正确")
-            print("4. 手动克隆 YOLOv5 仓库")
+            print("4. 手���克隆 YOLOv5 仓库")
             print("   git clone https://github.com/ultralytics/yolov5.git")
             print("   pip install -r yolov5/requirements.txt")
             raise
         
         # 初始化串口
         try:
-            import serial
-            self.serial_port = serial.Serial(
-                port='/dev/ttyAMA0',  # 树莓派的串口设备
-                baudrate=115200,      # 提高波特率
-                timeout=1,
-                write_timeout=1
-            )
-            print("串口初始化成功")
+            if not isinstance(GPIO, MockGPIO):  # 只在实际的树莓派上初始化串口
+                import serial
+                self.serial_port = serial.Serial(
+                    port='/dev/ttyAMA0',
+                    baudrate=115200,
+                    timeout=1,
+                    write_timeout=1
+                )
+                print("串口初始化成功")
+            else:
+                self.serial_port = None
+                print("模拟环境：跳过串口初始化")
         except Exception as e:
             print(f"串口初始化失败: {e}")
             self.serial_port = None
@@ -144,15 +154,34 @@ class PingPongDetector:
             
             if self.serial_port and self.serial_port.is_open:
                 # 发送位置信号
-                signal = f"{position}\n".encode()  # 添加换行符并编码
+                signal = f"{position}\n".encode()
                 self.serial_port.write(signal)
-                self.serial_port.flush()  # 确保数据发送完成
+                self.serial_port.flush()
                 print(f"发送位置信号: {position}")
             else:
                 print("串口未打开")
             
         except Exception as e:
             print(f"发送位置信号时出错: {e}")
+            print("尝试重新打开串口...")
+            try:
+                if self.serial_port:
+                    self.serial_port.close()
+                import serial
+                self.serial_port = serial.Serial(
+                    port='/dev/ttyAMA0',
+                    baudrate=115200,
+                    timeout=1,
+                    write_timeout=1
+                )
+                print("串口重新打开成功")
+                # 重试发送
+                signal = f"{position}\n".encode()
+                self.serial_port.write(signal)
+                self.serial_port.flush()
+                print(f"重试发送成功: {position}")
+            except Exception as e2:
+                print(f"重试失败: {e2}")
     
     def detect(self, frame):
         try:
@@ -241,7 +270,7 @@ class PingPongDetector:
                             dy = abs(det['y_center'] - final_det['y_center'])
                             dist = (dx*dx + dy*dy) ** 0.5
                             
-                            # 如果中心点距离小于平均半���，认为是重叠
+                            # 如果中心点距离小于平均半，认为是重叠
                             avg_radius = (det['width'] + det['height'] + 
                                         final_det['width'] + final_det['height']) / 8
                             if dist < avg_radius:
